@@ -1,0 +1,37 @@
+LTspice 24.1.9 for Windows
+Circuit: C:\Users\palco\github_projects\Tarleton\Electronics\Project Draft.net
+Start Time: Sun Sep  7 21:05:01 2025
+solver = Normal
+Maximum thread count: 16
+tnom = 27
+temp = 27
+method = trap
+.OP point found by inspection.
+Total elapsed time: 0.020 seconds.
+
+Files loaded:
+C:\Users\palco\github_projects\Tarleton\Electronics\Project Draft.net
+
+v20hz: V(vo)=(-3.30981715273dB,-35.2452886545°) at 20
+v40hz: V(vo)=(-6.60101335721dB,-41.7502580953°) at 40
+v80hz: V(vo)=(-9.67376858583dB,-42.06748943°) at 80
+v160hz: V(vo)=(-12.4377726492dB,-43.7665498472°) at 160
+v320hz: V(vo)=(-15.6163159132dB,-45.4014538561°) at 320
+v640hz: V(vo)=(-18.6794427476dB,-44.8093933772°) at 640
+v1280hz: V(vo)=(-21.6917211382dB,-45.3213207606°) at 1280
+v2560hz: V(vo)=(-24.806928867dB,-44.2457947945°) at 2560
+v5120hz: V(vo)=(-27.4803388673dB,-43.6372037302°) at 5120
+v10240hz: V(vo)=(-30.3543056702dB,-46.3697811923°) at 10240
+v20480hz: V(vo)=(-33.4980666904dB,-47.8352699867°) at 20480
+v15hz: V(vo)=(-2.2312028047dB,-30.3819282353°) at 15
+v30hz: V(vo)=(-5.18132190632dB,-40.1165240067°) at 30
+v60hz: V(vo)=(-8.4826888796dB,-42.1470014769°) at 60
+v120hz: V(vo)=(-11.2582813014dB,-42.7190055145°) at 120
+v240hz: V(vo)=(-14.2634697591dB,-45.1077630634°) at 240
+v480hz: V(vo)=(-17.4525804161dB,-45.0365002688°) at 480
+v960hz: V(vo)=(-20.4046675647dB,-45.0564979247°) at 960
+v1920hz: V(vo)=(-23.5512891723dB,-44.9972051885°) at 1920
+v3840hz: V(vo)=(-26.4067573993dB,-43.4136190131°) at 3840
+v7680hz: V(vo)=(-29.0878484698dB,-45.1222166703°) at 7680
+v15360hz: V(vo)=(-32.2256911263dB,-47.4502927965°) at 15360
+Measurement "v30720hz" FAIL'ed
