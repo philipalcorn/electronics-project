@@ -5,6 +5,7 @@ from sklearn.metrics import r2_score
 from PyLTSpice import SimRunner,SpiceEditor,RawRead
 import time
 import os
+from random import randint
 
 class Spice:
     def __init__(self,ascPath,spicePath):
@@ -19,7 +20,6 @@ class Spice:
         self.LTC=SimRunner()
         self.LTC.create_netlist(self.ascPath)
         self.netlist=SpiceEditor(self.netPath)
-        self.LTR=RawRead(self.rawPath)
 
     def simulate(self):
         # Delete old file to ensure we dont get old data
@@ -31,22 +31,20 @@ class Spice:
 
         # Make sure simulation has finished writing to .raw
         self.waitRaw()
+        self.LTR=RawRead(self.rawPath)
 
     def waitRaw(self):
         # Ensure that the file exists before continuing
         start=time.time()
         while not os.path.exists(self.rawPath):
-            if time.time()-start>5:
+            if time.time()-start>20:
                 raise TimeoutError("Could not open "+self.rawPath)
 
         # Make sure the data has finished writing
         size=os.path.getsize(self.rawPath)
-        print(size)
-        if size==0:
-            while size==0:
-                size=os.path.getsize(self.rawPath)
+        while size==0:
+            size=os.path.getsize(self.rawPath)
         while os.path.getsize(self.rawPath)>size:
-            print(size)
             size=os.path.getsize(self.rawPath)
 
     def getData(self,trace):
@@ -59,7 +57,9 @@ class Spice:
         self.netlist.set_component_value(component,value)
 
 class Optimizer:
-    def __init__(self,shelfs,cPath,rPath):
+    def __init__(self,spice,shelfs,cPath,rPath):
+        self.spice=spice
+
         # Initalize common cap and resistor values as empty tuples
         self.cs=self.tupleFromFile(cPath)
         self.cs=self.tupleFromFile(rPath)
@@ -92,14 +92,21 @@ class Optimizer:
 
     def beginOptimization(self):
         self.iteration(0)
-        print()
+        self.spice.setVal("R1",15e3)
+
+        vout=self.spice.getData("V(vo)")
+        freq=np.array(self.spice.getData("frequency")).real.astype(float)
+        return vout,freq
+
+
 
     def iteration(self,n):
-        print(self.component[n],end=" ")
+        print(f"Optimizing: {self.component[n]}")
         if n==self.iterations-1:
+            self.spice.simulate()
             return
         else:
-         self.iteration(n+1)
+            self.iteration(n+1)
 
 def infoOut(differences,slope,m,r2):
     # Prints various pieces of information
@@ -139,20 +146,13 @@ def main():
     spicePath=r"C:\Users\ruoom\AppData\Local\Programs\ADI\LTspice\LTspice.exe"
     spice=Spice(ascPath,spicePath)
 
-    # Run LTSpice simulation
-    spice.simulate()
-
-    # Get data from LTSpice simulation
-    vout=spice.getData("V(vo)")
-    freq=np.array(spice.getData("frequency")).real.astype(float)
-
     # Path to text file with common sizes
     rPath=r".\common_resistor_sizes.txt"
     cPath=r".\common_cap_sizes.txt"
 
     # Create optimizer object
-    opt=Optimizer(4,cPath,rPath)
-    opt.beginOptimization()
+    opt=Optimizer(spice,4,cPath,rPath)
+    vout,freq=opt.beginOptimization()
 
     # Convert magnitude to dB
     vout_db = 20 * np.log10(np.abs(vout))
