@@ -1,15 +1,9 @@
-from configparser import RawConfigParser
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
-from PyLTSpice import SimRunner,SpiceEditor,RawRead
-#from PyLTSpice.sim.process_callback import ProcessCallback
+from PyLTSpice import SimRunner,SpiceEditor
 import time
 import os
-import shutil
-import glob
-
 import callbacks
 
 class Spice:
@@ -21,7 +15,7 @@ class Spice:
         self.netPath="."+(self.ascPath.split(".")[1])+".net"
 
         # Create the simulator and netlist objects
-        self.LTC=SimRunner(output_folder=outputFolder,parallel_sims=12)
+        self.LTC=SimRunner(output_folder=outputFolder,parallel_sims=16)
         self.LTC.create_netlist(self.ascPath)
         self.netlist=SpiceEditor(self.netPath)
 
@@ -50,8 +44,8 @@ class Optimizer:
         self.rs=self.tupleFromFile(rPath)
 
         # The first and last two iteration will be for R1, the feedback cap, and DC blocking cap
-        self.shelfs=shelfs
-        self.component=tuple(self.getComponentNames())
+        #self.shelfs=shelfs
+        #self.component=tuple(self.getComponentNames())
 
     @staticmethod
     def tupleFromFile(filepath):
@@ -65,44 +59,21 @@ class Optimizer:
 
         return values
 
-    def getComponentNames(self):
-        components=["R1"]
-        for i in range(2,self.shelfs+2):
-            components.append(f"R{i}")
-            components.append(f"C{i}")
-        return components
-
-    def beginOptimization(self):
-        bestError=50 # arbitrary
-        comp=self.component[0]
-        for r in self.rs:
-            print(f"Optimizing: {self.component[0]} {r}")
-            self.spice.setVal(comp,r)
-            error,vals=self.iteration(0,bestError,1e18)
-            if error<self.bestError:
-                bestError=error
-                bestVals=[r]+vals
-        
-        print(bestVals)
-        #set best components values and export
-
-        vout=self.spice.getData("V(vo)")
-        return vout,self.freq
-
     def generateRaws(self):
         self.cleanBatchDir()
         scriptDir=os.path.dirname(os.path.abspath(__file__))
         batchDir=os.path.join(scriptDir,"batch")
 
-        self.rs=tuple([1e3,5e3])
+        #self.rs=tuple([1e3,5e3])
         #self.cs=tuple([30e-9,300e-9])
 
         #self.rs=tuple([1,10])
-        self.cs=tuple([150e-9])
+        #self.cs=tuple([150e-9])
+        self.rs=tuple([10e3,6e3,2.5e3,900,350,10])
+        self.cs=tuple([470e-9,150e-9,68e-9,22e-9,15e-9])
+        #self.spice.simulate(runNetlistFile="{}_{}".format((self.spice.netlist.netlist_file.name).split(".")[0],"default"))
 
-        #self.rs=tuple([10e3,6e3,2.5e3,900,350,10])
-        #self.cs=tuple([470e-9,150e-9,68e-9,22e-9,15e-9])
-
+        bestError=np.inf
         for r1 in self.rs:
             self.spice.netlist.set_component_value("R1",r1)
             for r2 in self.rs:
@@ -138,10 +109,15 @@ class Optimizer:
                                                     if r6c6>r5c5:
                                                         continue
                                                     self.spice.netlist.set_component_value("C6",c6)
-                                                    runNetlistFile="{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}".format((self.spice.netlist.netlist_file.name).split(".")[0],r1,r2,c2,r3,c3,r4,c4,r5,c5,r6,c6)
+                                                    runNetlistFile = "{}_{}".format((self.spice.netlist.netlist_file.name).split(".")[0],"_".join(f"{v:.0e}"for v in [r1,r2,c2,r3,c3,r4,c4,r5,c5,r6,c6]))
                                                     self.spice.simulate(runNetlistFile)
-        self.spice.LTC.wait_completion()
+                                            self.spice.LTC.wait_completion()
+                                            if "bestFile" not in locals():
+                                                bestFile=runNetlistFile
+                                            bestError,bestFile=self.findBest(bestError,bestFile)
+                                            self.cleanBatchDir()
         print("Successful/Total Simulations: " + str(self.spice.LTC.okSim) + "/" + str(self.spice.LTC.runno))
+        print("Optimization Finished")
 
     def cleanBatchDir(self):
         scriptDir=os.path.dirname(os.path.abspath(__file__))
@@ -149,45 +125,64 @@ class Optimizer:
         if os.path.isdir(batchDir):
             for item in os.listdir(batchDir):
                 itemPath=os.path.join(batchDir,item)
-                if os.path.isfile(itemPath) or os.path.islink(itemPath):
-                    os.remove(itemPath)
-                elif os.path.isdir(itemPath):
-                    shutil.rmtree(itemPath)
+                os.remove(itemPath)
 
-    def findBest(self):
+    def findBest(self,bestError,bestFile):
         freq=self.getFrequencyData()
-        print("FREQ")
-        print(freq)
-        for vout in self.spice.LTC:
-            print()
-            print(vout)
-            print(vout[500],freq[500])
+        idealM=10*np.log10(1/2)
+        logFreq=np.log2(freq)
+        for vout,rawFile in self.spice.LTC:
+            error=self.calcError(vout[0::10],freq[0::10],idealM,logFreq[0::10])
+            #print(error)
+            #error=self.calcError(vout,freq,idealM,logFreq)
+            if error<bestError:
+                bestError=error
+                bestFile=rawFile
+                print("New Best",bestError)
+                print(self.components(bestFile))
+        #print(bestFile,bestError)
+        return bestError,bestFile
+                
 
     def getFrequencyData(self):
         spice=Spice(self.spice.ascPath,self.spice.spicePath,"./",callbacks.CallbackProcFreq)
         runNetlistFile="{}_{}".format((spice.netlist.netlist_file.name).split(".")[0],"Frequency")
         spice.simulate(runNetlistFile)
         for freq in spice.LTC:
-            return freq
+            return freq.reshape(-1,1)
 
-    def calcError(self,rawFile):
-        self.LTR=RawRead(rawFile)
-        vout=self.spice.getData("V(vo)")
-
+    def calcError(self,vout,freq,idealM,logFreq):
         # Convert magnitude to dB
-        vout_db = 20 * np.log10(np.abs(vout))
+        voutDb=20*np.log10(np.abs(vout))
+        model=LinearRegression().fit(logFreq,voutDb)
+        yFit=model.predict(logFreq)
+        #print(model.coef_[0])
 
-        # Prepare Features
-        y = vout_db
+        yMid=yFit[int(len(vout)/2)]
+        xMid=logFreq[int(len(vout)/2)][0]
 
-        #Fit linear regression
-        model = LinearRegression().fit(self.freqx,y)
-        y_fit = model.predict(self.freqx)
-
-        slope = model.coef_[0]  # Slope in dB/oct
-        m=10*np.log10(1/2)
-        error=(slope/m-1)**2
+        idealVout=yMid+idealM*(logFreq.flatten()-xMid)
+        error=np.linalg.norm(voutDb-idealVout,ord=2)
         return error
+
+        # For debugging
+        plt.semilogx(freq, voutDb, label="Measured")
+        #plt.semilogx(freq, ideal_line, "g:", label="Ideal Response")
+        plt.semilogx(freq, idealVout, "r:", label="Best Fit")
+        plt.xlabel("Frequency [Hz]")
+        plt.ylabel("Magnitude [dB]")
+        plt.grid(True, which="both")
+
+        plt.legend()
+        plt.show()
+
+        return error
+
+    def components(self,file):
+        parts=str(file).split("_")[2:]
+        parts[-1]=parts[-1].split(".")[0]
+        names=["R1","R2","C2", "R3","C3","R4","C4","R5","C5","R6","C6"]
+        return dict(zip(names,parts))
 
 def infoOut(differences,slope,m,r2):
     # Prints various pieces of information
@@ -237,36 +232,6 @@ def main():
     opt=Optimizer(spice,5,cPath,rPath)
     opt.generateRaws()
     opt.findBest()
-    return
-
-    # Convert magnitude to dB
-    vout_db = 20 * np.log10(np.abs(vout))
-
-    # Prepare Features
-    x = np.log2(freq).flatten()
-    y = vout_db
-
-    #Fit linear regression
-    model = LinearRegression().fit(x.reshape(-1,1),y)
-    y_fit = model.predict(x.reshape(-1,1))
-
-    slope = model.coef_[0]  # Slope in dB/oct
-    r2 = r2_score(y,y_fit)  # R Squared Value
-
-    # Finding max error
-    differences = y - y_fit
-    max_diff = np.max(np.abs(differences))
-
-    # Defining ideal line
-    # Setting the line to start at the first data point
-    x0 = x[0]
-    y0 = y[0]
-    m=10*np.log10(1/2)
-    ideal_line = y0 + (m)*(x.flatten()-x0)
-
-    infoOut(differences,slope,m,r2)
-
-    graph(freq,vout_db,y_fit,ideal_line,slope,max_diff,r2)
     
 if __name__=="__main__":
     main()
